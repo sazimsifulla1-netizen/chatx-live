@@ -2,7 +2,7 @@
 const express=require('express'),{Pool}=require('pg'),bcrypt=require('bcryptjs'),jwt=require('jsonwebtoken'),crypto=require('crypto'),helmet=require('helmet'),rateLimit=require('express-rate-limit');
 if(!process.env.DATABASE_URL)throw Error('DATABASE_URL required');
 if(!process.env.JWT_SECRET||process.env.JWT_SECRET.length<32)throw Error('JWT_SECRET must be at least 32 chars');
-const db=new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_URL.includes('localhost')?false:{rejectUnauthorized:process.env.PGSSL_REJECT_UNAUTHORIZED!=='false'}});
+const db=new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DB_SSL==='true'?{rejectUnauthorized:true}:false});
 const app=express();app.disable('x-powered-by');app.use(helmet({contentSecurityPolicy:false}));app.use(express.json({limit:'32kb'}));app.use('/api/auth',rateLimit({windowMs:15*60*1000,limit:20,standardHeaders:'draft-7',legacyHeaders:false}));app.use(express.static('public'));
 const query=(s,p)=>db.query(s,p);const wrap=f=>(req,res)=>Promise.resolve(f(req,res)).catch(e=>{console.error(e);res.status(500).json({error:'Server error'})});
 const validPhone=p=>typeof p==='string'&&/^01[3-9]\d{8}$/.test(p);const validName=n=>typeof n==='string'&&/^[a-zA-Z][a-zA-Z0-9_]{2,19}$/.test(n);
