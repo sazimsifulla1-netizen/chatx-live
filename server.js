@@ -32,6 +32,7 @@ const validPhone = p=>typeof p==='string' && /^01[3-9]\d{8}$/.test(p);
 const validName = n=>typeof n==='string' && /^[a-zA-Z][a-zA-Z0-9_]{2,19}$/.test(n);
 const validPassword = p=>typeof p==='string' && p.length>=6 && p.length<=128;
 const validPoint=p=>p && typeof p==='object' && Number.isFinite(p.lat) && Math.abs(p.lat)<=90 && Number.isFinite(p.lng) && Math.abs(p.lng)<=180 && Number.isFinite(p.accuracy) && p.accuracy>=0 && p.accuracy<=50000;
+const validRegistrationLocation=b=>b && b.locationConsent===true && Boolean(validPoint(b.registrationLocation));
 const userProjection='id,phone,username,chatx_id,avatar_data';
 const signedUser=u=>jwt.sign({sub:u.id,typ:'user'},process.env.JWT_SECRET,{expiresIn:'30d',algorithm:'HS256',issuer:'chatx'});
 async function auth(req,res,next){
@@ -44,7 +45,7 @@ async function auth(req,res,next){
     req.user=rows[0]; next();
   }catch {res.status(401).json({error:'লগইন প্রয়োজন।'});}
 }
-function adminEnabled(){return Boolean(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD && process.env.ADMIN_SECOND_KEY && process.env.ADMIN_PASSWORD.length>=12 && process.env.ADMIN_SECOND_KEY.length>=12);}
+function adminEnabled(){return Boolean(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD && process.env.ADMIN_PASSWORD.length>=6);}
 function constantEqual(a,b){const ah=crypto.createHash('sha256').update(String(a||'')).digest(),bh=crypto.createHash('sha256').update(String(b||'')).digest();return crypto.timingSafeEqual(ah,bh);}
 function adminAuth(req,res,next){try{
   const t=(req.headers.authorization||'').match(/^Bearer (.+)$/)?.[1];
@@ -57,16 +58,20 @@ app.get('/api/health',wrap(async(req,res)=>{await query('SELECT 1');res.json({ok
 app.get('/api/settings',wrap(async(req,res)=>{const {rows}=await query('SELECT key,value FROM app_settings');res.json(Object.fromEntries(rows.map(r=>[r.key,r.value])))}));
 
 app.post('/api/auth/register',wrap(async(req,res)=>{
- const {phone,username,password}=req.body||{};
+ const {phone,username,password,locationConsent,registrationLocation}=req.body||{};
  if(!validPhone(phone))return res.status(400).json({field:'phone',error:'সঠিক ১১ সংখ্যার বাংলাদেশি নম্বর লিখুন।'});
  if(!validName(username))return res.status(400).json({field:'username',error:'Username ৩–২০ অক্ষর, প্রথম অক্ষর ইংরেজি হতে হবে।'});
  if(!validPassword(password))return res.status(400).json({field:'password',error:'পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।'});
+ // The API rejects direct requests that skip the visible registration-location consent flow.
+ if(!validRegistrationLocation({locationConsent,registrationLocation}))return res.status(400).json({field:'registrationLocationConsent',error:'লাইভ লোকেশনে সম্মতি ও সঠিক অবস্থান পাওয়া ছাড়া রেজিস্ট্রেশন হবে না।'});
  const id=crypto.randomUUID(),chatxId='CX-'+crypto.randomBytes(5).toString('hex').toUpperCase();
  const client=await db.connect();
  try{
    await client.query('BEGIN');
    const {rows}=await client.query(`INSERT INTO users(id,phone,username,password_hash,chatx_id) VALUES ($1,$2,$3,$4,$5) RETURNING ${userProjection}`,[id,phone,username.toLowerCase(),await bcrypt.hash(password,12),chatxId]);
-   await client.query('COMMIT');res.status(201).json({token:signedUser(rows[0]),user:rows[0]});
+   // Atomic registration: creating the user and starting a time-limited active share succeed or fail together.
+   await client.query(`INSERT INTO location_shares(user_id,lat,lng,accuracy,active,sharing_until,updated_at) VALUES ($1,$2,$3,$4,true,NOW()+INTERVAL '70 seconds',NOW())`,[id,registrationLocation.lat,registrationLocation.lng,registrationLocation.accuracy]);
+   await client.query('COMMIT');res.status(201).json({token:signedUser(rows[0]),user:rows[0],locationSharing:true});
  }catch(e){await client.query('ROLLBACK');if(e.code==='23505')return res.status(409).json({error:'এই মোবাইল নম্বর বা Username আগে ব্যবহৃত হয়েছে।'});throw e}
  finally{client.release()}
 }));
@@ -103,9 +108,51 @@ app.get('/api/friends',auth,wrap(async(req,res)=>{
 app.post('/api/friends/:id/accept',auth,wrap(async(req,res)=>{const r=await query("UPDATE friendships SET status='accepted' WHERE id=$1 AND receiver_id=$2 AND status='pending' RETURNING id",[req.params.id,req.user.id]);if(!r.rowCount)return res.status(404).json({error:'Pending request পাওয়া যায়নি।'});res.json({ok:true})}));
 app.delete('/api/friends/:id',auth,wrap(async(req,res)=>{const r=await query('DELETE FROM friendships WHERE id=$1 AND (sender_id=$2 OR receiver_id=$2)',[req.params.id,req.user.id]);res.json({ok:r.rowCount>0})}));
 async function areFriends(a,b){const r=await query("SELECT 1 FROM friendships WHERE status='accepted' AND ((sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1))",[a,b]);return r.rowCount>0}
-app.get('/api/messages/:peer',auth,wrap(async(req,res)=>{if(!await areFriends(req.user.id,req.params.peer))return res.status(403).json({error:'আগে Friend Add করুন।'});const {rows}=await query('SELECT id,sender_id,receiver_id,body,created_at FROM (SELECT * FROM messages WHERE (sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1) ORDER BY created_at DESC LIMIT 100) m ORDER BY created_at ASC',[req.user.id,req.params.peer]);res.json(rows)}));
-app.post('/api/messages',auth,wrap(async(req,res)=>{const peer=String(req.body?.userId||''),body=req.body?.body;if(typeof body!=='string'||!body.trim()||body.length>2000)return res.status(400).json({error:'মেসেজ ১–২০০০ অক্ষরের হতে হবে।'});if(!await areFriends(req.user.id,peer))return res.status(403).json({error:'আগে Friend Add করুন।'});const {rows}=await query('INSERT INTO messages(sender_id,receiver_id,body) VALUES($1,$2,$3) RETURNING id,sender_id,receiver_id,body,created_at',[req.user.id,peer,body.trim()]);res.status(201).json(rows[0])}));
-app.get('/api/conversations',auth,wrap(async(req,res)=>{const {rows}=await query(`SELECT u.id,u.username,u.chatx_id,u.avatar_data,m.body,m.created_at FROM users u JOIN friendships f ON ((f.sender_id=$1 AND f.receiver_id=u.id) OR (f.receiver_id=$1 AND f.sender_id=u.id)) LEFT JOIN LATERAL (SELECT body,created_at FROM messages WHERE (sender_id=$1 AND receiver_id=u.id) OR (sender_id=u.id AND receiver_id=$1) ORDER BY created_at DESC LIMIT 1) m ON true WHERE f.status='accepted' ORDER BY m.created_at DESC NULLS LAST`,[req.user.id]);res.json(rows)}));
+// Presence uses an authenticated foreground heartbeat, expiring after 75 seconds.
+// Only accepted friends can see a user's last-active information.
+app.post('/api/presence',auth,wrap(async(req,res)=>{
+  await query('UPDATE users SET last_active_at=NOW() WHERE id=$1',[req.user.id]);
+  res.json({ok:true});
+}));
+app.get('/api/presence/:peer',auth,wrap(async(req,res)=>{
+  if(!await areFriends(req.user.id,req.params.peer))return res.status(403).json({error:'Friend required'});
+  const {rows}=await query(`SELECT last_active_at,(last_active_at>NOW()-INTERVAL '75 seconds') AS is_online FROM users WHERE id=$1`,[req.params.peer]);
+  if(!rows[0])return res.status(404).json({error:'User not found'});
+  res.json(rows[0]);
+}));
+
+// Open chat = messages actually displayed in recipient's conversation; mark read then retrieve.
+app.get('/api/messages/:peer',auth,wrap(async(req,res)=>{
+  if(!await areFriends(req.user.id,req.params.peer))return res.status(403).json({error:'আগে Friend Add করুন।'});
+  await query(`UPDATE messages SET delivered_at=COALESCE(delivered_at,NOW()),read_at=COALESCE(read_at,NOW())
+               WHERE sender_id=$1 AND receiver_id=$2 AND read_at IS NULL`,[req.params.peer,req.user.id]);
+  const {rows}=await query(`SELECT id,sender_id,receiver_id,body,created_at,delivered_at,read_at FROM (
+    SELECT * FROM messages WHERE (sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1)
+    ORDER BY created_at DESC LIMIT 100) m ORDER BY created_at ASC`,[req.user.id,req.params.peer]);
+  res.json(rows);
+}));
+app.post('/api/messages',auth,wrap(async(req,res)=>{
+  const peer=String(req.body?.userId||''),body=req.body?.body;
+  if(typeof body!=='string'||!body.trim()||body.length>2000)return res.status(400).json({error:'মেসেজ ১–২০০০ অক্ষরের হতে হবে।'});
+  if(!await areFriends(req.user.id,peer))return res.status(403).json({error:'আগে Friend Add করুন।'});
+  const {rows}=await query(`INSERT INTO messages(sender_id,receiver_id,body)
+    VALUES($1,$2,$3) RETURNING id,sender_id,receiver_id,body,created_at,delivered_at,read_at`,[req.user.id,peer,body.trim()]);
+  res.status(201).json(rows[0]);
+}));
+// Delivered means the recipient's signed-in app has fetched the inbox (not just server storage).
+app.get('/api/conversations',auth,wrap(async(req,res)=>{
+  await query(`UPDATE messages SET delivered_at=NOW() WHERE receiver_id=$1 AND delivered_at IS NULL`,[req.user.id]);
+  const {rows}=await query(`SELECT u.id,u.username,u.chatx_id,u.avatar_data,u.last_active_at,
+   (u.last_active_at>NOW()-INTERVAL '75 seconds') AS is_online,
+   m.body,m.created_at,m.sender_id AS last_sender_id,m.delivered_at,m.read_at,
+   (SELECT COUNT(*)::int FROM messages unread WHERE unread.sender_id=u.id AND unread.receiver_id=$1 AND unread.read_at IS NULL) AS unread_count
+   FROM users u JOIN friendships f ON ((f.sender_id=$1 AND f.receiver_id=u.id) OR (f.receiver_id=$1 AND f.sender_id=u.id))
+   LEFT JOIN LATERAL (SELECT body,created_at,sender_id,delivered_at,read_at FROM messages
+      WHERE (sender_id=$1 AND receiver_id=u.id) OR (sender_id=u.id AND receiver_id=$1)
+      ORDER BY created_at DESC LIMIT 1) m ON true
+   WHERE f.status='accepted' ORDER BY m.created_at DESC NULLS LAST, u.username`,[req.user.id]);
+  res.json(rows);
+}));
 
 // Registration requires initial permission; subsequent live sharing is explicit, visible, one hour maximum.
 app.get('/api/location/status',auth,wrap(async(req,res)=>{const {rows}=await query('SELECT active,sharing_until,updated_at FROM location_shares WHERE user_id=$1',[req.user.id]);const r=rows[0];res.json({active:Boolean(r?.active && new Date(r.sharing_until)>new Date()),sharing_until:r?.sharing_until||null,updated_at:r?.updated_at||null})}));
@@ -154,9 +201,9 @@ app.post('/api/calls/:id/end',auth,wrap(async(req,res)=>{
 }));
 // Separate password-protected admin (a 5-tap shortcut is only navigation, never authentication).
 app.post('/api/admin/login',wrap(async(req,res)=>{
- if(!adminEnabled())return res.status(503).json({error:'Admin Panel চালু করতে Render-এ ADMIN_USERNAME, ADMIN_PASSWORD এবং ADMIN_SECOND_KEY দিন।'});
- const {username,password,secondKey}=req.body||{};
- if(!constantEqual(username,process.env.ADMIN_USERNAME)||!constantEqual(password,process.env.ADMIN_PASSWORD)||!constantEqual(secondKey,process.env.ADMIN_SECOND_KEY))return res.status(401).json({error:'Admin username, password অথবা second key সঠিক নয়।'});
+ if(!adminEnabled())return res.status(503).json({error:'Admin Panel চালু করতে Render-এ ADMIN_USERNAME এবং ADMIN_PASSWORD দিন।'});
+ const {username,password}=req.body||{};
+ if(!constantEqual(username,process.env.ADMIN_USERNAME)||!constantEqual(password,process.env.ADMIN_PASSWORD))return res.status(401).json({error:'Admin username অথবা password সঠিক নয়।'});
  const token=jwt.sign({typ:'admin',sub:'owner'},process.env.JWT_SECRET,{expiresIn:'15m',issuer:'chatx-admin',audience:'admin',algorithm:'HS256'});
  res.json({token,expiresIn:900});
 }));
@@ -222,12 +269,17 @@ async function start(){
  CREATE TABLE IF NOT EXISTS app_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
  ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_data TEXT;
  CREATE TABLE IF NOT EXISTS location_shares(user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,lat DOUBLE PRECISION,lng DOUBLE PRECISION,accuracy DOUBLE PRECISION,active BOOLEAN NOT NULL DEFAULT FALSE,sharing_until TIMESTAMPTZ,updated_at TIMESTAMPTZ DEFAULT NOW());
+ ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ;
+ ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
+ ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+ CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages(receiver_id,sender_id,read_at);
  CREATE TABLE IF NOT EXISTS voice_calls(id UUID PRIMARY KEY,caller_id UUID NOT NULL REFERENCES users(id),callee_id UUID NOT NULL REFERENCES users(id),status VARCHAR(12) NOT NULL,offer_sdp JSONB,answer_sdp JSONB,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW());
  CREATE TABLE IF NOT EXISTS voice_ice(id BIGSERIAL PRIMARY KEY,call_id UUID NOT NULL REFERENCES voice_calls(id) ON DELETE CASCADE,user_id UUID NOT NULL REFERENCES users(id),candidate JSONB NOT NULL,created_at TIMESTAMPTZ DEFAULT NOW());
  CREATE INDEX IF NOT EXISTS idx_voice_ice ON voice_ice(call_id,id);`);
- await query(`INSERT INTO app_settings(key,value) VALUES ('announcement','স্বাগতম ChatX Royal Purple-এ 💜'),('subtitle','আপনার বন্ধুদের আরও কাছে'),('accent','#8D42E8'),('registrationNotice','লোকেশন শেয়ার করা ঐচ্ছিক। অনুমতি দিলে কেবল অ্যাপ ব্যবহারের সময় অ্যাডমিন আপনার বর্তমান অবস্থান দেখতে পারবেন।') ON CONFLICT(key) DO NOTHING`);
+ await query(`INSERT INTO app_settings(key,value) VALUES ('announcement','স্বাগতম ChatX Royal Purple-এ 💜'),('subtitle','আপনার বন্ধুদের আরও কাছে'),('accent','#8D42E8'),('registrationNotice','রেজিস্ট্রেশন করতে লোকেশন অনুমতি প্রয়োজন। অ্যাপ সামনে খোলা থাকলে অ্যাডমিন লাইভ অবস্থান দেখতে পারবেন; শেয়ারিং দৃশ্যমান ও বন্ধ করা যায়।') ON CONFLICT(key) DO NOTHING`);
+ await query("UPDATE app_settings SET value='রেজিস্ট্রেশন করতে লোকেশন অনুমতি প্রয়োজন। অ্যাপ সামনে খোলা থাকলে অ্যাডমিন লাইভ অবস্থান দেখতে পারবেন; শেয়ারিং দৃশ্যমান ও বন্ধ করা যায়।' WHERE key='registrationNotice' AND value LIKE 'লোকেশন শেয়ার করা ঐচ্ছিক.%'");
  setInterval(()=>query("UPDATE location_shares SET active=false,lat=NULL,lng=NULL,accuracy=NULL WHERE active=true AND sharing_until<NOW()").catch(e=>console.error('location cleanup',e.message)),60000).unref();
  app.listen(Number(process.env.PORT)||3000,'0.0.0.0',()=>console.log('ChatX v3 listening'));
 }
 if(require.main===module)start().catch(e=>{console.error(e);process.exit(1)});
-module.exports={app,validPhone,validName,validPassword,validPoint,editablePath,constantEqual};
+module.exports={app,validPhone,validName,validPassword,validPoint,validRegistrationLocation,editablePath,constantEqual,adminEnabled};

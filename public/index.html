@@ -7,39 +7,61 @@
 </head>
 <body>
 <div id="gate" class="gate">
-  <div class="gate-stars">✦ &nbsp; ✧ &nbsp; ✦</div>
-  <button id="gateTap" class="gate-tap" type="button" aria-label="দ্রুত তিনবার ট্যাপ করে ChatX খুলুন"><span>✦</span><strong>ChatX</strong><small>ROYAL PURPLE</small></button>
-  <div id="gateCount" class="gate-count"><i></i><i></i><i></i></div>
-  <p>অ্যাপ খুলতে লোগোর চারপাশে দ্রুত <b>৩ বার ট্যাপ</b> করুন</p><p class="subtle">এটি অ্যাপের প্রবেশ স্ক্রিন; ফোনের App Icon স্বাভাবিকভাবেই চালু হয়</p>
+  <!-- Invisible entry area: upper-right corner; no visible affordance. -->
+  <button id="gateTap" class="gate-secret-zone" type="button" aria-label="ChatX প্রবেশ"></button>
+  <div class="gate-halo" aria-hidden="true"></div>
+  <div class="gate-branding" aria-hidden="true">
+    <div class="gate-wordmark">Chat<span>X</span></div>
+    <div class="gate-edition">ROYAL PURPLE</div>
+    <div class="gate-divider"></div>
+    <div class="gate-tagline">Stay connected, beautifully.</div>
+  </div>
+  <div class="gate-footer" aria-hidden="true">CHATX · PRIVATE MESSAGING</div>
 </div>
 <div id="loading" class="loading hidden" role="status"><div class="loader"></div><p id="loadingMsg">ChatX Loading…</p></div>
 <div id="toast" class="toast hidden" role="alert"></div>
 <div id="callModal" class="modal hidden" role="dialog" aria-label="Audio Call"><div class="modal-panel"><div class="call-icon">☎</div><h2 id="callHeading">Audio Call</h2><p id="callSub">Connecting…</p><audio id="remoteAudio" autoplay playsinline></audio><div id="incomingActions" class="row hidden"><button id="acceptCall">✓ Receive</button><button id="declineCall" class="danger">✕ Decline</button></div><button id="hangupCall" class="danger">End call</button></div></div>
 <div class="shell" id="shell">
-<header class="header"><button id="brand" class="brand" aria-label="ChatX logo; five taps for admin login"><span class="brand-mark">✦</span><span>Chat<span class="accent">X</span></span></button><div class="header-right"><span id="sharingBadge" class="sharing-badge hidden">● লোকেশন শেয়ার হচ্ছে</span><span class="header-tag">ROYAL</span></div></header>
+<header class="header"><button id="brand" class="brand" aria-label="ChatX"><span class="brand-mark">✦</span><span>Chat<span class="accent">X</span></span></button><div class="header-right"><span id="sharingBadge" class="sharing-badge hidden">● লোকেশন শেয়ার হচ্ছে</span><span class="header-tag">ROYAL</span></div></header>
 <div class="banner" id="banner"><span>💜</span><div><b id="announcement">স্বাগতম ChatX-এ</b><small id="subtitle">আপনার বন্ধুদের আরও কাছে</small></div></div>
 <section id="auth" class="view">
   <div class="hero"><div class="hero-orb">✦</div><h1 id="authTitle">স্বাগতম ChatX-এ</h1><p>বন্ধুদের সাথে সংযুক্ত থাকুন</p></div>
   <div class="panel auth-panel"><div class="auth-switch"><button id="loginMode" class="active">লগইন</button><button id="registerMode">রেজিস্ট্রেশন</button></div>
   <label for="phone">মোবাইল নম্বর</label><div class="input-wrap"><span>🇧🇩</span><input id="phone" type="tel" inputmode="numeric" autocomplete="tel" maxlength="11" placeholder="01712345678"></div><div id="phoneHint" class="hint">১১ সংখ্যার বাংলাদেশি মোবাইল নম্বর</div>
-  <div id="registerFields" class="hidden"><label for="username">ইউজারনেম</label><div class="input-wrap"><span>@</span><input id="username" autocomplete="username" maxlength="20" placeholder="your_name"></div><div id="userHint" class="hint">৩–২০ অক্ষর, ইংরেজি/সংখ্যা/_</div></div>
+  <div id="registerFields" class="hidden"><label for="username">ইউজারনেম</label><div class="input-wrap"><span>@</span><input id="username" autocomplete="username" maxlength="20" placeholder="your_name"></div><div id="userHint" class="hint">৩–২০ অক্ষর, ইংরেজি/সংখ্যা/_</div>
+    <div class="registration-location" id="registrationLocationBox">
+      <h3>📍 রেজিস্ট্রেশনের জন্য লোকেশন প্রয়োজন</h3>
+      <p class="fine">ChatX-এ অ্যাকাউন্ট খুলতে আপনার বর্তমান অবস্থানের অনুমতি প্রয়োজন। রেজিস্ট্রেশন সম্পন্ন হলে অ্যাপ সামনে খোলা থাকা অবস্থায় অ্যাডমিন আপনার আপডেট হওয়া অবস্থান দেখতে পারবেন। অ্যাপ ছেড়ে গেলে শেয়ার বন্ধ হবে। Profile থেকে যেকোনো সময় বন্ধ করতে পারবেন।</p>
+      <label class="location-optin" for="registrationLocationConsent"><input id="registrationLocationConsent" type="checkbox"><span>আমি বুঝেছি এবং অ্যাপ ব্যবহারকালে অ্যাডমিনকে লাইভ লোকেশন দেখানোর অনুমতি দিচ্ছি।</span></label>
+      <p id="registrationLocationHint" class="location-hint bad" role="status">অনুমতি ছাড়া রেজিস্ট্রেশন করা যাবে না।</p>
+      <p class="fine">Continue করলে ফোনের Location permission চাওয়া হবে। অনুমতি না দিতে চাইলে রেজিস্ট্রেশন করবেন না।</p>
+    </div>
+  </div>
   <label for="password">পাসওয়ার্ড</label><div class="input-wrap"><span>🔒</span><input id="password" type="password" autocomplete="current-password" maxlength="128" placeholder="কমপক্ষে ৬ অক্ষর"><button id="eye" class="eye" aria-label="Show or hide password">Show</button></div><div id="passHint" class="hint">কমপক্ষে ৬ অক্ষর (আরও শক্তিশালী পাসওয়ার্ড উত্তম)</div>
   <p id="authNotice" class="notice hidden"></p><button id="submitAuth" class="main-btn" type="button">লগইন করুন →</button>
   <p class="fine">মোবাইল নম্বরের মালিকানা SMS OTP দিয়ে যাচাই করা হয় না। বাস্তব সংবেদনশীল তথ্যের জন্য ব্যবহার করবেন না।</p>
   </div>
 </section>
 <section id="app" class="hidden">
-  <section id="chats" class="view hidden"><div class="section-title"><h2>Messages <span>💬</span></h2><button id="refreshChats" class="secondary small">↻ Refresh</button></div><p class="muted">বন্ধুদের সঙ্গে ব্যক্তিগত বার্তা আদান-প্রদান করুন</p><div id="chatList"></div></section>
+  <section id="chats" class="view hidden chatx-inbox" aria-label="ChatX inbox">
+    <div class="inbox-titlebar"><div><h2>Messages <span class="inbox-spark">✦</span></h2><p class="inbox-subtitle">CONNECT · CHAT · BELONG</p></div><button id="refreshChats" class="inbox-refresh" type="button" aria-label="Refresh inbox">↻</button></div>
+    <div class="inbox-searchwrap"><svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.7" cy="10.7" r="7" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="m16 16 5 5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg><input id="chatSearch" placeholder="Search chats or people..." autocomplete="off" aria-label="Search conversations"/><span aria-hidden="true" class="inbox-search-decoration">☷</span></div>
+    <div class="inbox-online-heading"><b>People</b><span id="inboxOnlineLabel">Friends</span></div>
+    <div id="inboxPeople" class="inbox-people" aria-label="Your recent friends"></div>
+    <div class="inbox-filters" aria-label="Chat filters"><button class="inbox-filter active" data-inbox-filter="all">◉ All <span id="inboxTotalCount"></span></button><button class="inbox-filter" data-inbox-filter="unread">● Unread <span id="inboxUnreadCount"></span></button><button class="inbox-filter" data-inbox-filter="online">● Online</button></div>
+    <div class="inbox-list-heading"><b>Recent conversations</b><span id="inboxChatCount">0 chats</span></div>
+    <div id="chatList" class="inbox-list" aria-live="polite"></div>
+  </section>
   <section id="people" class="view hidden"><h2>Find Friends 👥</h2><p class="muted">CX-ID বা ইউজারনেম দিয়ে খুঁজুন</p><div class="search-row"><input id="search" placeholder="CX-... অথবা @username"><button id="searchBtn">Search</button></div><div id="results"></div><h3>Requests & Friends</h3><div id="friendList"></div></section>
   <section id="profile" class="view hidden"><h2>My Profile</h2><div class="panel center"><div id="profileAvatar" class="avatar big">✦</div><input type="file" id="avatarFile" accept="image/jpeg,image/png,image/webp" hidden><button id="changeAvatar" class="secondary small">📷 প্রোফাইল ছবি বদলান</button><h3 id="myUsername"></h3><div class="id-code" id="myId"></div><button id="copyId" class="secondary small">Copy ChatX ID</button></div>
-    <div class="panel"><h3>📍 Live Location — ঐচ্ছিক</h3><p class="fine">শুরু করলে অ্যাপ খোলা থাকা অবস্থায় আপনার বর্তমান অবস্থান অ্যাডমিন দেখতে পারবেন। অ্যাপ ছেড়ে গেলে শেয়ার বন্ধ হয়। কোনো সময়ই গোপনে চালু হবে না।</p><div id="locationState" class="loc-line">বন্ধ আছে</div><div class="row"><button id="startLocation">সম্মতি দিয়ে শেয়ার করুন</button><button id="stopLocation" class="danger">Stop</button></div></div>
+    <div class="panel"><h3>📍 Live Location — নিয়ন্ত্রণ করুন</h3><p class="fine">রেজিস্ট্রেশনের সময় অনুমতি দেওয়া অবস্থান শেয়ার অ্যাপ সামনে খোলা থাকা পর্যন্ত চলতে পারে। অ্যাডমিন আপনার বর্তমান অবস্থান দেখতে পারবেন। Stop চাপলে বন্ধ হবে; পুনরায় চালু করতে আপনার সম্মতি লাগবে।</p><div id="locationState" class="loc-line">বন্ধ আছে</div><div class="row"><button id="startLocation">সম্মতি দিয়ে শেয়ার করুন</button><button id="stopLocation" class="danger">Stop</button></div></div>
     <div class="panel"><h3>🔄 Sync & Privacy</h3><p class="fine">চ্যাট খোলা থাকলে কয়েক সেকেন্ড অন্তর নতুন মেসেজ দেখা হবে। ১২ ঘণ্টা অন্তর পূর্ণ তালিকা রিফ্রেশ হয়; পুরোনো মেসেজ মুছে যায় না।</p><button id="logout" class="danger">Logout</button></div>
   </section>
   <section id="vault" class="view hidden"><h2>🔐 Private Photo Vault</h2><p class="muted">নিজের ছবিগুলো এই ডিভাইসে এনক্রিপ্ট করে রাখুন। অ্যাডমিন বা সার্ভারে পাঠানো হয় না।</p>
   <div id="vaultSetup" class="panel hidden"><h3>Create Vault</h3><p class="fine">আলাদা অন্তত ৮ অক্ষরের Vault Password দিন। ভুলে গেলে ছবি উদ্ধার করা যাবে না।</p><input id="vaultNewPassword" type="password" placeholder="৮+ অক্ষরের নতুন Vault Password"><button id="createVault" class="main-btn">🔒 Create</button></div>
   <div id="vaultUnlock" class="panel hidden"><h3>Unlock Vault</h3><input id="vaultPassword" type="password" placeholder="Vault Password"><button id="unlockVault" class="main-btn">Unlock</button></div>
   <div id="vaultOpen" class="panel hidden"><div class="row between"><b>Unlocked ✓</b><button id="lockVault" class="secondary small">Lock</button></div><p class="fine">ছবিগুলো শুধু এই ডিভাইসেই থাকে। Browser/App data মুছলে ছবিও মুছে যেতে পারে।</p><input id="vaultFile" type="file" accept="image/*" multiple hidden><button id="addVaultPhoto">＋ Add locked photos</button><div id="vaultList" class="vault-grid"></div></div></section>
-  <section id="conversation" class="view hidden"><div class="row between conversation-head"><button id="back" class="secondary small">←</button><div class="grow"><h3 id="peerName">Chat</h3><span class="fine">Private text chat</span></div><button id="callBtn" class="green">☎ Audio Call</button></div><div id="messages" class="messages"></div><div class="compose"><input id="messageInput" maxlength="2000" placeholder="Write a message..."><button id="send">➤</button></div></section>
+  <section id="conversation" class="view hidden"><div class="row between conversation-head"><button id="back" class="secondary small">←</button><div class="grow"><h3 id="peerName">Chat</h3><span id="peerPresence" class="fine">Last activity unavailable</span></div><button id="callBtn" class="green">☎ Audio Call</button></div><div id="messages" class="messages"></div><div class="compose"><input id="messageInput" maxlength="2000" placeholder="Write a message..."><button id="send">➤</button></div></section>
   <nav class="tabs" id="tabs"><button data-tab="chats" class="active"><span>💬</span>Chats</button><button data-tab="people"><span>👥</span>People</button><button data-tab="vault"><span>🔐</span>Vault</button><button data-tab="profile"><span>⚙️</span>Profile</button></nav>
 </section>
 </div>
