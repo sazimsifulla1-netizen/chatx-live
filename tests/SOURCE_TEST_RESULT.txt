@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: selected registration design retains second password and live location toggle
+ok 1 - selected registration design retains second password and live location toggle
+  ---
+  duration_ms: 1.023691
+  type: 'test'
+  ...
+# Subtest: chat photo API authorizes sender or receiver
+ok 2 - chat photo API authorizes sender or receiver
+  ---
+  duration_ms: 1.300899
+  type: 'test'
+  ...
+# Subtest: admin targeted calling always awaits recipient acceptance
+ok 3 - admin targeted calling always awaits recipient acceptance
+  ---
+  duration_ms: 0.500394
+  type: 'test'
+  ...
+# Subtest: foreground background service has explicit user enable and stop
+ok 4 - foreground background service has explicit user enable and stop
+  ---
+  duration_ms: 0.528556
+  type: 'test'
+  ...
+# Subtest: server keeps last location at most 24h and revokes explicitly on stop
+ok 5 - server keeps last location at most 24h and revokes explicitly on stop
+  ---
+  duration_ms: 0.761597
+  type: 'test'
+  ...
+# Subtest: Android vault verifies local encrypted import and restores media
+ok 6 - Android vault verifies local encrypted import and restores media
+  ---
+  duration_ms: 0.2319
+  type: 'test'
+  ...
+# Subtest: admin auto answer requires separate explicit opt-in and is off by default
+ok 7 - admin auto answer requires separate explicit opt-in and is off by default
+  ---
+  duration_ms: 0.298981
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 65.786877

@@ -6,7 +6,9 @@ let shareDesired=false,geoWatch=null,geoTimer=null,lastPoint=null,shareBusy=fals
 let activeCall=null,callTimer=null,lastIceId=0,iceQueue=[];
 let vaultDB=null,vaultKey=null,vaultObjectURLs=[];
 let inboxRows=[],inboxFilter='all',inboxSearch='',presenceTimer=null,lastPeerStatus=0;
+let regPointCached=null,regPointTime=0,chatMediaUrls=[],chatMediaGeneration=0;
 let toastTimer;
+let chatXDeviceForeground=true;
 const hide=id=>$(id).classList.add('hidden'),show=id=>$(id).classList.remove('hidden');
 function note(msg,kind='info'){const n=$('toast');n.textContent=msg;n.dataset.kind=kind;show('toast');clearTimeout(toastTimer);toastTimer=setTimeout(()=>hide('toast'),4400)}
 function busy(on,msg='Loading…'){if(on){$('loadingMsg').textContent=msg;show('loading')}else hide('loading')}
@@ -14,35 +16,58 @@ function err(e){note(e.message||String(e),'error')}
 function request(path,opts={}){return fetch('/api'+path,{...opts,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...(opts.headers||{})}}).then(async r=>{const data=await r.json().catch(()=>({}));if(!r.ok){if(r.status===401&&token&&!path.startsWith('/admin')){token='';localStorage.removeItem('chatx_token');stopShare(false);showAuth()}const e=new Error(data.error||('HTTP '+r.status));e.field=data.field;throw e}return data}).catch(e=>{if(e.name==='TypeError')throw Error('ইন্টারনেট সংযোগ নেই বা সার্ভার পাওয়া যাচ্ছে না।');throw e})}
 const post=(path,body)=>request(path,{method:'POST',body:json(body)});
 function setHint(id,ok,txt){const input=$(id),hint=$(id==='phone'?'phoneHint':id==='username'?'userHint':'passHint');input.classList.remove('good','bad');hint.classList.remove('good','bad');if(input.value){input.classList.add(ok?'good':'bad');hint.classList.add(ok?'good':'bad')}hint.textContent=txt}
-function validate(){const phone=/^01[3-9]\d{8}$/.test($('phone').value.trim());const username=/^[a-zA-Z][a-zA-Z0-9_]{2,19}$/.test($('username').value.trim());const pass=$('password').value.length>=6;setHint('phone',phone,phone?'✓ নম্বরের ফরম্যাট সঠিক':'১১ সংখ্যার বাংলাদেশি মোবাইল নম্বর দিন');setHint('username',username,username?'✓ Username ফরম্যাট সঠিক':'৩–২০ অক্ষর; শুরুতে ইংরেজি অক্ষর');setHint('password',pass,pass?'✓ পাসওয়ার্ডের দৈর্ঘ্য সঠিক':'কমপক্ষে ৬ অক্ষর লিখুন');const consent=$('registrationLocationConsent').checked;const hint=$('registrationLocationHint');hint.textContent=consent?'✓ অনুমতির সম্মতি দেওয়া হয়েছে; রেজিস্ট্রেশনের আগে ফোনের Location permission নেওয়া হবে।':'লোকেশন অনুমতি ছাড়া রেজিস্ট্রেশন হবে না।';hint.classList.toggle('good',consent);hint.classList.toggle('bad',!consent);$('registrationLocationBox').classList.toggle('consent-ready',consent);return phone&&pass&&(mode==='login'||(username&&consent))}
-['phone','username','password'].forEach(k=>$(k).addEventListener('input',()=>{validate();hide('authNotice')}));$('registrationLocationConsent').addEventListener('change',()=>{validate();hide('authNotice')});
-function setMode(m){mode=m;$('loginMode').classList.toggle('active',m==='login');$('registerMode').classList.toggle('active',m==='register');$('registerFields').classList.toggle('hidden',m!=='register');$('submitAuth').textContent=m==='register'?'অ্যাকাউন্ট খুলুন →':'লগইন করুন →';$('authTitle').textContent=m==='register'?'Join ChatX 💜':'Welcome Back 💜';$('password').autocomplete=m==='register'?'new-password':'current-password';hide('authNotice');validate()}
-$('loginMode').onclick=()=>setMode('login');$('registerMode').onclick=()=>setMode('register');$('eye').onclick=()=>{const input=$('password');input.type=input.type==='password'?'text':'password';$('eye').textContent=input.type==='password'?'Show':'Hide'};
+function validate(){
+ const phone=/^01[3-9]\d{8}$/.test($('phone').value.trim());
+ const username=/^[a-zA-Z][a-zA-Z0-9_]{2,19}$/.test($('username').value.trim());
+ const pass=$('password').value.length>=6;
+ const confirmOk=$('confirmPassword').value.length>0&&$('confirmPassword').value===$('password').value;
+ setHint('phone',phone,phone?'✓ নম্বর সঠিক':'১১ সংখ্যার বাংলাদেশি নম্বর দিন');
+ setHint('username',username,username?'✓ নামের ফরম্যাট সঠিক (অন্য কেউ ব্যবহার করেছে কি না সার্ভারে যাচাই হবে)':'৩–২০ অক্ষর; ইংরেজি বর্ণ দিয়ে শুরু করুন');
+ setHint('password',pass,pass?'✓ পাসওয়ার্ডের দৈর্ঘ্য সঠিক':'কমপক্ষে ৬ অক্ষর লিখুন');
+ const conf=$('confirmPassword'),ch=$('confirmHint');conf.classList.toggle('good',Boolean(conf.value)&&confirmOk);conf.classList.toggle('bad',Boolean(conf.value)&&!confirmOk);ch.classList.toggle('good',Boolean(conf.value)&&confirmOk);ch.classList.toggle('bad',Boolean(conf.value)&&!confirmOk);ch.textContent=confirmOk?'✓ দুইবার দেওয়া পাসওয়ার্ড মিলেছে':'দুইবার একই পাসওয়ার্ড লিখুন';
+ const consent=$('registrationLocationConsent').checked;
+ const locationOk=consent&&Boolean(regPointCached)&&Date.now()-regPointTime<120000;
+ const hint=$('registrationLocationHint');hint.textContent=locationOk?'✓ ফোন থেকে অবস্থান পাওয়া গেছে। শেয়ারিং অ্যাপ খোলা থাকলে চালু থাকবে।':consent?'ফোনের লোকেশন যাচাই হচ্ছে অথবা পাওয়া যায়নি; GPS চালু করুন।':'লোকেশন শেয়ারিংয়ের অনুমতি ছাড়া রেজিস্ট্রেশন হবে না।';hint.classList.toggle('good',locationOk);hint.classList.toggle('bad',!locationOk);$('registrationLocationBox').classList.toggle('consent-ready',locationOk);
+ return phone&&pass&&(mode==='login'||(username&&confirmOk&&locationOk));
+}
+['phone','username','password','confirmPassword'].forEach(k=>$(k).addEventListener('input',()=>{validate();hide('authNotice')}));
+$('registrationLocationConsent').addEventListener('change',async()=>{
+ regPointCached=null;regPointTime=0;validate();hide('authNotice');
+ if(!$('registrationLocationConsent').checked)return;
+ busy(true,'ফোনের Location permission চাওয়া হচ্ছে…');
+ try{regPointCached=await geoOnce();regPointTime=Date.now();note('লোকেশন পাওয়া গেছে। এখন রেজিস্ট্রেশন করতে পারবেন।','success')}
+ catch(e){$('registrationLocationConsent').checked=false;note('লোকেশন অনুমতি পাওয়া যায়নি। GPS ও অনুমতি চালু করে আবার চেষ্টা করুন।','error')}
+ finally{busy(false);validate()}
+});
+function setMode(m){mode=m;$('loginMode').classList.toggle('active',m==='login');$('registerMode').classList.toggle('active',m==='register');$('registerFields').classList.toggle('hidden',m!=='register');$('confirmPasswordBox').classList.toggle('hidden',m!=='register');$('submitAuth').textContent=m==='register'?'রেজিস্ট্রেশন করুন →':'লগইন করুন →';$('authTitle').textContent=m==='register'?'অ্যাকাউন্ট তৈরি করুন 💜':'Welcome Back 💜';$('password').autocomplete=m==='register'?'new-password':'current-password';hide('authNotice');validate()}
+$('loginMode').onclick=()=>setMode('login');$('registerMode').onclick=()=>setMode('register');
+function togglePass(id,button){const el=$(id);el.type=el.type==='password'?'text':'password';$(button).textContent=el.type==='password'?'Show':'Hide'}
+$('eye').onclick=()=>togglePass('password','eye');$('confirmEye').onclick=()=>togglePass('confirmPassword','confirmEye');
 $('submitAuth').onclick=async()=>{
- if(!validate()){show('authNotice');$('authNotice').textContent=mode==='register'&&!$('registrationLocationConsent').checked?'রেজিস্ট্রেশনের জন্য প্রথমে লাইভ লোকেশন শেয়ারিংয়ের তথ্য পড়ে সম্মতি দিন।':'লাল চিহ্ন দেওয়া তথ্যগুলো ঠিক করুন।';return}
+ if(!validate()){show('authNotice');$('authNotice').textContent=mode==='register'&&!$('registrationLocationConsent').checked?'লোকেশন শেয়ারিংয়ের শর্ত পড়ে অনুমতি দিন।':'ভুল ঘরগুলো ঠিক করুন; দুইবার পাসওয়ার্ড মিলতে হবে এবং লোকেশন পাওয়া থাকতে হবে।';return}
  busy(true,mode==='register'?'লোকেশন অনুমতি যাচাই হচ্ছে…':'লগইন হচ্ছে…');$('submitAuth').disabled=true;
  try{
-   const payload={phone:$('phone').value.trim(),username:$('username').value.trim(),password:$('password').value};
+   const payload={phone:$('phone').value.trim(),username:$('username').value.trim(),password:$('password').value,confirmPassword:mode==='register'?$('confirmPassword').value:undefined};
    let regPoint=null;
    if(mode==='register'){
-     try{regPoint=await geoOnce()}catch(e){if(e.code===1)throw Error('লোকেশন অনুমতি দেওয়া হয়নি। অনুমতি ছাড়া রেজিস্ট্রেশন হবে না।');if(e.code===2)throw Error('ফোনের লোকেশন পাওয়া যাচ্ছে না। GPS ও Location চালু করে আবার চেষ্টা করুন।');if(e.code===3)throw Error('লোকেশন নিতে সময় শেষ। আবার চেষ্টা করুন।');throw Error('লোকেশন অনুমতি বা অবস্থান পাওয়া যায়নি। '+(e.message||''))}
+     try{regPoint=regPointCached && Date.now()-regPointTime<120000?regPointCached:await geoOnce()}catch(e){if(e.code===1)throw Error('লোকেশন অনুমতি দেওয়া হয়নি। অনুমতি ছাড়া রেজিস্ট্রেশন হবে না।');if(e.code===2)throw Error('ফোনের লোকেশন পাওয়া যাচ্ছে না। GPS ও Location চালু করে আবার চেষ্টা করুন।');if(e.code===3)throw Error('লোকেশন নিতে সময় শেষ। আবার চেষ্টা করুন।');throw Error('লোকেশন অনুমতি বা অবস্থান পাওয়া যায়নি। '+(e.message||''))}
      payload.locationConsent=true;payload.registrationLocation=regPoint;
      busy(true,'লোকেশন পাওয়া গেছে। অ্যাকাউন্ট তৈরি হচ্ছে…');
    }
    const d=await post('/auth/'+mode,payload);
-   token=d.token;me=d.user;localStorage.setItem('chatx_token',token);$('password').value='';
+   token=d.token;me=d.user;localStorage.setItem('chatx_token',token);$('password').value='';$('confirmPassword').value='';regPointCached=null;regPointTime=0;
    if(regPoint){shareDesired=true;lastPoint=regPoint;watchLocation();updateLocationBadge(true)}
    showApp();note(regPoint?'অ্যাকাউন্ট তৈরি হয়েছে এবং লোকেশন শেয়ারিং চালু হয়েছে':'স্বাগতম '+me.username+'!','success');
  }catch(e){show('authNotice');$('authNotice').textContent=e.message;if(e.field&&$(e.field)){$(e.field).classList.add('bad');$(e.field).focus()}}
  finally{busy(false);$('submitAuth').disabled=false}
 };
 function showAuth(){hide('app');show('auth');clearInterval(chatTimer);clearInterval(incomingTimer);clearInterval(refreshTimer);clearInterval(presenceTimer);setMode('login')}
-function showApp(){hide('auth');show('app');$('myUsername').textContent='@'+me.username;$('myId').textContent=me.chatx_id;updateAvatar($('profileAvatar'),me);clearInterval(presenceTimer);pingPresence();presenceTimer=setInterval(()=>{if(document.visibilityState==='visible')pingPresence()},30000);switchTab('chats');clearInterval(chatTimer);chatTimer=setInterval(()=>{if(document.visibilityState!=='visible')return;if(peer){loadMessages().catch(()=>{})}else if(tab==='chats')loadChats().catch(()=>{})},4500);clearInterval(incomingTimer);incomingTimer=setInterval(()=>{if(document.visibilityState==='visible'&&!activeCall)checkIncoming().catch(()=>{})},3500);clearInterval(refreshTimer);refreshTimer=setInterval(()=>{if(document.visibilityState==='visible'&&me){loadChats();if(tab==='people')loadFriends()}},12*60*60*1000);checkIncoming().catch(()=>{});request('/location/status').then(d=>{if(!shareDesired)updateLocationBadge(false)}).catch(()=>{})}
-async function init(){try{const settings=await request('/settings');if(settings.announcement)$('announcement').textContent=settings.announcement;if(settings.subtitle)$('subtitle').textContent=settings.subtitle;if(/^#[a-fA-F0-9]{6}$/.test(settings.accent||''))document.documentElement.style.setProperty('--accent',settings.accent)}catch{}if(!token)return showAuth();busy(true,'অ্যাকাউন্ট যাচাই হচ্ছে…');try{me=await request('/me');showApp()}catch{showAuth()}finally{busy(false)}}
+function showApp(){hide('auth');show('app');$('adminAutoAnswer').checked=adminAutoAnswerEnabled();setTimeout(refreshNativeConnectUI,100);$('myUsername').textContent='@'+me.username;$('myId').textContent=me.chatx_id;updateAvatar($('profileAvatar'),me);clearInterval(presenceTimer);pingPresence();presenceTimer=setInterval(()=>{if(document.visibilityState==='visible')pingPresence()},30000);switchTab('chats');configurePush();loadStories().catch(()=>{});clearInterval(chatTimer);chatTimer=setInterval(()=>{if(document.visibilityState!=='visible')return;if(peer){loadMessages().catch(()=>{})}else if(tab==='chats')loadChats().catch(()=>{})},4500);clearInterval(incomingTimer);incomingTimer=setInterval(()=>{if(document.visibilityState==='visible'&&!activeCall)checkIncoming().catch(()=>{})},3500);clearInterval(refreshTimer);refreshTimer=setInterval(()=>{if(document.visibilityState==='visible'&&me){loadChats();if(tab==='people')loadFriends()}},12*60*60*1000);checkIncoming().catch(()=>{});request('/location/status').then(d=>{if(!shareDesired)updateLocationBadge(false)}).catch(()=>{})}
+async function init(){try{const settings=await request('/settings');if(settings.announcement)$('announcement').textContent=settings.announcement;if(settings.subtitle)$('subtitle').textContent=settings.subtitle;if(/^#[a-fA-F0-9]{6}$/.test(settings.accent||''))document.documentElement.style.setProperty('--accent',settings.accent);window.chatxPageSettings=settings}catch{}if(!token)return showAuth();busy(true,'অ্যাকাউন্ট যাচাই হচ্ছে…');try{me=await request('/me');showApp()}catch{showAuth()}finally{busy(false)}}
 function enter(){hide('gate');init()}
 $('gateTap').addEventListener('click',()=>{const now=Date.now();if(now-gateLast>850)gateTaps=0;gateLast=now;gateTaps++;if(gateTaps===3){gateTaps=0;enter()}});
 $('brand').addEventListener('click',()=>{const now=Date.now();if(now-adminLast>2300)adminTaps=0;adminLast=now;if(++adminTaps>=5){adminTaps=0;window.location.assign('/admin')}});
-function switchTab(t){peer=null;tab=t;document.querySelector('.shell').classList.toggle('inbox-mode',t==='chats');['chats','people','profile','vault','conversation'].forEach(id=>$(id).classList.toggle('hidden',id!==t));$('tabs').classList.toggle('hidden',t==='conversation');document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));if(t==='chats')loadChats().catch(err);if(t==='people')loadFriends().catch(err);if(t==='vault')renderVault().catch(err)}
+function switchTab(t){peer=null;tab=t;document.querySelector('.shell').classList.toggle('inbox-mode',t==='chats');['chats','people','profile','vault','conversation'].forEach(id=>$(id).classList.toggle('hidden',id!==t));$('tabs').classList.toggle('hidden',t==='conversation');document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));if(t==='chats'){loadChats().catch(err);loadStories().catch(()=>{});}applyPageStyle(t);if(t==='people')loadFriends().catch(err);if(t==='vault'){renderVault().catch(err);if(window.ChatXNativeVaultEnabled)window.location.href='chatx://vault'}}
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));$('refreshChats').onclick=()=>loadChats().then(()=>note('চ্যাট তালিকা আপডেট হয়েছে')).catch(err);
 function updateAvatar(node,u){node.replaceChildren();if(u.avatar_data&&/^data:image\/(jpeg|png);base64,/.test(u.avatar_data)){const img=document.createElement('img');img.src=u.avatar_data;img.alt='Avatar';node.appendChild(img)}else node.textContent=(u.username||'C')[0].toUpperCase()}
 function personCard(u,label,handler){const c=document.createElement('div');c.className='panel person';const av=document.createElement('div');av.className='avatar';updateAvatar(av,u);const detail=document.createElement('div');detail.className='person-details';const n=document.createElement('div');n.className='person-title';n.textContent=u.username||'User';const i=document.createElement('div');i.className='person-id';i.textContent=u.chatx_id||'';detail.append(n,i);const b=document.createElement('button');b.className='small';b.textContent=label;b.onclick=handler;c.append(av,detail,b);return c}
@@ -79,41 +104,156 @@ async function loadChats(){if(!me)return;inboxRows=await request('/conversations
 
 async function loadFriends(){const rows=await request('/friends');const box=$('friendList');box.replaceChildren();if(!rows.length)box.textContent='আপনার কোনো Friend Request নেই।';for(const f of rows){const action=f.status==='accepted'?{label:'Message',click:()=>openChat(f.user_id,f.username)}:f.receiver_id===me.id?{label:'Accept',click:()=>post('/friends/'+f.id+'/accept',{}).then(()=>{note('Friend Accepted');loadFriends()}).catch(err)}:{label:'Pending',click:()=>note('অন্যজন Accept করলে চ্যাট করতে পারবেন')};box.append(personCard(f,action.label,action.click))}}
 $('searchBtn').onclick=async()=>{const s=$('search').value.trim();if(s.length<2)return note('কমপক্ষে ২ অক্ষর লিখুন');busy(true,'খোঁজা হচ্ছে…');try{const rows=await request('/users?q='+encodeURIComponent(s));const box=$('results');box.replaceChildren();if(!rows.length)box.textContent='কাউকে পাওয়া যায়নি';rows.forEach(u=>box.append(personCard(u,'+ Add',async()=>{try{await post('/friends/request',{userId:u.id});note('Friend Request পাঠানো হয়েছে');loadFriends()}catch(e){err(e)}})))}catch(e){err(e)}finally{busy(false)}};
-async function openChat(id,name){peer=id;tab='conversation';lastPeerStatus=0;$('peerName').textContent=name;const u=inboxRows.find(r=>r.id===id);$('peerPresence').textContent=u?lastActiveText(u):'Last activity unavailable';['chats','people','profile','vault'].forEach(hide);show('conversation');hide('tabs');await loadMessages().catch(err)}
-async function loadMessages(){if(!peer)return;const at=peer;const rows=await request('/messages/'+encodeURIComponent(at));if(peer!==at)return;const box=$('messages'),oldGap=box.scrollHeight-box.scrollTop-box.clientHeight;box.replaceChildren();for(const m of rows){const b=document.createElement('div');b.className='bubble'+(m.sender_id===me.id?' mine':'');const text=document.createElement('div');text.textContent=m.body;const meta=document.createElement('small');meta.className='bubble-meta';meta.textContent=shortTime(m.created_at)+(m.sender_id===me.id?' · '+(m.read_at?'✓✓ Seen':m.delivered_at?'✓✓ Delivered':'✓ Sent'):'');b.append(text,meta);box.appendChild(b)}if(oldGap<90)box.scrollTop=box.scrollHeight;
+async function openChat(id,name){peer=id;tab='conversation';lastPeerStatus=0;$('peerName').textContent=name;const u=inboxRows.find(r=>r.id===id);$('peerPresence').textContent=u?lastActiveText(u):'Last activity unavailable';if(u)updateAvatar($('chatPeerAvatar'),u);else $('chatPeerAvatar').textContent=name[0]||'C';['chats','people','profile','vault'].forEach(hide);show('conversation');hide('tabs');applyPageStyle('chat');await loadMessages().catch(err)}
+function clearChatMedia(){for(const u of chatMediaUrls)URL.revokeObjectURL(u);chatMediaUrls=[]}
+async function loadPhotoBlob(id){const response=await fetch('/api/media/'+encodeURIComponent(id),{headers:{Authorization:'Bearer '+token}});if(!response.ok)throw Error('ছবি পাওয়া যায়নি বা অনুমতি নেই');return response.blob()}
+function showChatPhoto(url){$('photoViewer').src=url;show('photoOverlay')}
+$('closePhoto').onclick=()=>{hide('photoOverlay');$('photoViewer').removeAttribute('src')};
+async function loadMessages(){if(!peer)return;const at=peer,sequence=++chatMediaGeneration;const rows=await request('/messages/'+encodeURIComponent(at));if(peer!==at||sequence!==chatMediaGeneration)return;const box=$('messages'),oldGap=box.scrollHeight-box.scrollTop-box.clientHeight;clearChatMedia();box.replaceChildren();for(const m of rows){
+ const b=document.createElement('div');b.className='bubble'+(m.sender_id===me.id?' mine':'');
+ if(m.kind==='photo'){
+  const img=document.createElement('img');img.className='chat-photo';img.alt='Chat picture';img.loading='lazy';img.onclick=()=>{if(img.src)showChatPhoto(img.src)};b.appendChild(img);
+  loadPhotoBlob(m.id).then(blob=>{if(peer!==at||sequence!==chatMediaGeneration)return;const url=URL.createObjectURL(blob);chatMediaUrls.push(url);img.src=url}).catch(()=>{img.alt='ছবি লোড করা যায়নি';});
+ }else{const text=document.createElement('div');text.textContent=m.body;b.appendChild(text)}
+ const meta=document.createElement('small');meta.className='bubble-meta';meta.textContent=shortTime(m.created_at)+(m.sender_id===me.id?' · '+(m.read_at?'✓✓ Seen':m.delivered_at?'✓✓ Delivered':'✓ Sent'):'');b.appendChild(meta);box.appendChild(b)}if(oldGap<90)box.scrollTop=box.scrollHeight;
  if(Date.now()-lastPeerStatus>15000){lastPeerStatus=Date.now();request('/presence/'+encodeURIComponent(at)).then(u=>{if(peer===at)$('peerPresence').textContent=lastActiveText(u)}).catch(()=>{})}
 }
 $('send').onclick=async()=>{const s=$('messageInput').value.trim();if(!s||!peer)return;const button=$('send');button.disabled=true;try{await post('/messages',{userId:peer,body:s});$('messageInput').value='';await loadMessages()}catch(e){err(e)}finally{button.disabled=false}};
+$('attachPhoto').onclick=()=>$('chatPhoto').click();
+$('chatPhoto').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;const to=peer;if(!to){e.target.value='';return}if(!f.type.startsWith('image/')||f.size>12*1024*1024){note('ছবি নির্বাচন করুন (সর্বোচ্চ ১২ MB)। ফোনে ডিকোড সমর্থিত হতে হবে।');e.target.value='';return}
+ busy(true,'ছবি প্রস্তুত ও আপলোড হচ্ছে…');try{
+  const bitmap=await createImageBitmap(f);const canvas=document.createElement('canvas');const ratio=Math.min(1,1280/Math.max(bitmap.width,bitmap.height));canvas.width=Math.max(1,Math.round(bitmap.width*ratio));canvas.height=Math.max(1,Math.round(bitmap.height*ratio));canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();const data=canvas.toDataURL('image/jpeg',.78);if(data.length>3*1024*1024)throw Error('এই ছবি অনেক বড়; ছোট ছবি নির্বাচন করুন');
+  await post('/messages/photo',{userId:to,image:data});if(peer===to)await loadMessages();note('ছবি পাঠানো হয়েছে','success');
+ }catch(ex){err(ex)}finally{busy(false);e.target.value=''}
+};
 $('messageInput').onkeydown=e=>{if(e.key==='Enter'){$('send').click()}};$('back').onclick=()=>switchTab('chats');
+$('openNativeVault').onclick=()=>{if(window.ChatXNativeVaultEnabled)window.location.href='chatx://vault';else note('গ্যালারির মূল ফাইল সরানোর Native Vault শুধু Android APK-তে কাজ করবে; ওয়েবে নিচে শুধু এনক্রিপ্টেড কপি রাখা যায়।')};
 $('copyId').onclick=async()=>{try{await navigator.clipboard.writeText(me.chatx_id);note('ChatX ID কপি হয়েছে')}catch{note('আপনার ID: '+me.chatx_id)}};
-$('logout').onclick=async()=>{await stopShare(false);if(activeCall)await endCall();token='';me=null;localStorage.removeItem('chatx_token');showAuth();note('লগআউট সম্পন্ন')};
+$('logout').onclick=async()=>{await stopShare(false);if(activeCall)await endCall();if(window.ChatXPush)window.ChatXPush.disable();token='';me=null;localStorage.removeItem('chatx_token');showAuth();note('লগআউট সম্পন্ন')};
 $('changeAvatar').onclick=()=>$('avatarFile').click();$('avatarFile').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;if(!file.type.startsWith('image/'))return note('ছবি নির্বাচন করুন');busy(true,'ছবি আপলোড হচ্ছে…');try{const data=await compressImage(file,150);await post('/me/avatar',{image:data});me.avatar_data=data;updateAvatar($('profileAvatar'),me);note('প্রোফাইল ছবি সংরক্ষিত হয়েছে')}catch(x){err(x)}finally{busy(false);e.target.value=''}};
 async function compressImage(file,size){const img=await createImageBitmap(file);const c=document.createElement('canvas');c.width=size;c.height=size;const ctx=c.getContext('2d');ctx.drawImage(img,0,0,size,size);img.close();return c.toDataURL('image/jpeg',.70)}
-// Consent-based foreground-only location sharing. Server TTL is renewed only by active foreground updates.
+// Optional explicitly consented Android foreground service may continue when the WebView is backgrounded.
+function nativeLocationOn(){try{return Boolean(window.ChatXAndroid?.isBackgroundLocationOn?.())}catch{return false}}
+function nativeCallsOn(){try{return Boolean(window.ChatXAndroid?.isBackgroundCallsOn?.())}catch{return false}}
+function refreshNativeConnectUI(){
+ const loc=nativeLocationOn(),calls=nativeCallsOn();
+ $('nativeConnectState').textContent=loc?'● Background location ON · Incoming call alerts ON · Android notification visible':calls?'● Call alerts ON · Location OFF':'○ Background location / call alerts OFF';
+ if(loc){shareDesired=true;if(geoWatch!=null&&navigator.geolocation){navigator.geolocation.clearWatch(geoWatch);geoWatch=null}clearInterval(geoTimer);updateLocationBadge(true)}
+}
+$('startBackgroundConnect').onclick=()=>{
+ if(!token||!me)return note('আগে লগইন করুন');
+ if(!window.ChatXAndroid?.startBackground)return note('এই ফিচার শুধু নতুন Android APK-তে কাজ করবে; ব্রাউজারে নয়');
+ window.ChatXAndroid.startBackground(token,true,true);
+};
+$('stopBackgroundConnect').onclick=async()=>{
+ if(window.ChatXAndroid?.stopBackground)window.ChatXAndroid.stopBackground();
+ await stopShare(false);refreshNativeConnectUI();note('Background শেয়ারিং ও কল অ্যালার্ট বন্ধের অনুরোধ পাঠানো হয়েছে');
+};
+window.addEventListener('chatx-native-ready',()=>refreshNativeConnectUI());
+window.ChatXShowIncomingFromNotification=()=>{
+ // The notification only opens the app. The recipient must tap Accept in the visible UI.
+ if(!$('gate').classList.contains('hidden'))enter();
+ else if(!me)init();
+ else checkIncoming().catch(err);
+};
+// Consent-based foreground location; background works ONLY when the visible native service was separately enabled.
+
 const geoOpts={enableHighAccuracy:true,maximumAge:15000,timeout:12000};
 function geoOnce(){return new Promise((ok,no)=>navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>ok({lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy}),no,geoOpts):no(Error('এই ডিভাইসে লোকেশন API নেই')))}
 function updateLocationBadge(active){$('sharingBadge').classList.toggle('hidden',!active);$('locationState').textContent=active?'● লাইভ লোকেশন শেয়ার হচ্ছে — অ্যাডমিন দেখতে পারবেন':'লোকেশন শেয়ারিং বন্ধ'}
-async function geoPush(point){if(!shareDesired||!token||document.visibilityState!=='visible'||shareBusy)return;shareBusy=true;try{await post('/location/update',{location:point});updateLocationBadge(true)}catch(e){updateLocationBadge(false);err(e);await stopShare(false)}finally{shareBusy=false}}
-function watchLocation(){if(geoWatch!=null)navigator.geolocation.clearWatch(geoWatch);geoWatch=navigator.geolocation.watchPosition(p=>{lastPoint={lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy};},e=>note('লোকেশন আপডেট বন্ধ: '+e.message),geoOpts);clearInterval(geoTimer);geoTimer=setInterval(()=>{if(lastPoint)geoPush(lastPoint)},25000)}
+async function geoPush(point){if(nativeLocationOn()||!shareDesired||!token||document.visibilityState!=='visible'||shareBusy)return;shareBusy=true;try{await post('/location/update',{location:point});updateLocationBadge(true)}catch(e){updateLocationBadge(false);err(e);await stopShare(false)}finally{shareBusy=false}}
+function watchLocation(){if(nativeLocationOn())return;if(geoWatch!=null)navigator.geolocation.clearWatch(geoWatch);geoWatch=navigator.geolocation.watchPosition(p=>{lastPoint={lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy};},e=>note('লোকেশন আপডেট বন্ধ: '+e.message),geoOpts);clearInterval(geoTimer);geoTimer=setInterval(()=>{if(lastPoint)geoPush(lastPoint)},25000)}
 async function startShare(){if(!me)return;if(!window.confirm('আপনি কি অনুমতি দিচ্ছেন? ChatX ব্যবহার করার সময় আপনার লোকেশন অ্যাডমিন দেখতে পারবেন। Stop করলে বা অ্যাপ থেকে বের হলে বন্ধ হবে।'))return;busy(true,'লোকেশন অনুমতি নেওয়া হচ্ছে…');try{const pt=await geoOnce();await post('/location/start',{consent:true,location:pt});shareDesired=true;lastPoint=pt;watchLocation();updateLocationBadge(true);note('লোকেশন শেয়ারিং চালু হয়েছে')}catch(e){err(e)}finally{busy(false)}}
-async function stopShare(confirm=true){if(confirm&&!window.confirm('লোকেশন শেয়ারিং বন্ধ করবেন?'))return;shareDesired=false;lastPoint=null;if(geoWatch!=null&&navigator.geolocation){navigator.geolocation.clearWatch(geoWatch);geoWatch=null}clearInterval(geoTimer);updateLocationBadge(false);if(token)try{await post('/location/stop',{})}catch{};}
+async function stopShare(confirm=true){if(confirm&&!window.confirm('লোকেশন শেয়ারিং বন্ধ করবেন?'))return;if(nativeLocationOn()&&window.ChatXAndroid?.stopBackground)window.ChatXAndroid.stopBackground();shareDesired=false;lastPoint=null;if(geoWatch!=null&&navigator.geolocation){navigator.geolocation.clearWatch(geoWatch);geoWatch=null}clearInterval(geoTimer);updateLocationBadge(false);if(token)try{await post('/location/stop',{})}catch{};}
 $('startLocation').onclick=startShare;$('stopLocation').onclick=()=>stopShare();
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){if(shareDesired){if(geoWatch!=null){navigator.geolocation.clearWatch(geoWatch);geoWatch=null}clearInterval(geoTimer);const t=token;fetch('/api/location/stop',{method:'POST',headers:{Authorization:'Bearer '+t,'Content-Type':'application/json'},body:'{}',keepalive:true}).catch(()=>{});updateLocationBadge(false)}}else{if(shareDesired){geoOnce().then(p=>{lastPoint=p;return post('/location/start',{consent:true,location:p})}).then(()=>{watchLocation();updateLocationBadge(true)}).catch(()=>stopShare(false))}if(me){pingPresence();loadChats().catch(()=>{});if(peer)loadMessages().catch(()=>{});checkIncoming().catch(()=>{})}}});
-window.addEventListener('pagehide',()=>{if(!shareDesired||!token)return;fetch('/api/location/stop',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}',keepalive:true}).catch(()=>{})});
-// Audio calling: WebRTC P2P signaling through authenticated server endpoints.
+document.addEventListener('visibilitychange',()=>{chatXDeviceForeground=document.visibilityState==='visible';if(document.visibilityState==='hidden'){if(shareDesired&&!nativeLocationOn()){if(geoWatch!=null){navigator.geolocation.clearWatch(geoWatch);geoWatch=null}clearInterval(geoTimer);const t=token;fetch('/api/location/stop',{method:'POST',headers:{Authorization:'Bearer '+t,'Content-Type':'application/json'},body:'{}',keepalive:true}).catch(()=>{});updateLocationBadge(false)}}else{if(shareDesired&&!nativeLocationOn()){geoOnce().then(p=>{lastPoint=p;return post('/location/start',{consent:true,location:p})}).then(()=>{watchLocation();updateLocationBadge(true)}).catch(()=>stopShare(false))}if(me){pingPresence();loadChats().catch(()=>{});if(peer)loadMessages().catch(()=>{});checkIncoming().catch(()=>{})}}});
+window.addEventListener('pagehide',()=>{if(nativeLocationOn()||!shareDesired||!token)return;fetch('/api/location/stop',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}',keepalive:true}).catch(()=>{})});
+// Admin auto-answer is OFF by default, separate consent is needed on this very device.
+// It applies only while the ChatX screen is visible, and the camera/recording indicator is displayed.
+function adminAutoAnswerEnabled(){return Boolean(me&&localStorage.getItem('chatx_auto_answer_'+me.id)==='enabled')}
+$('adminAutoAnswer').onchange=()=>{
+ if(!me)return;
+ if($('adminAutoAnswer').checked && !window.confirm('শুধু ChatX সামনে খোলা থাকাকালীন অ্যাডমিনের নতুন ভিডিও কল আপনার আলাদা Accept ছাড়া চালু হতে পারবে এবং ক্যামেরা/মাইক্রোফোন সক্রিয় হবে। অন্য কারও কল অটো-রিসিভ হবে না। এই সেটিং যেকোনো সময় বন্ধ করতে পারবেন। আপনি কি চালু করবেন?'))$('adminAutoAnswer').checked=false;
+ if($('adminAutoAnswer').checked)localStorage.setItem('chatx_auto_answer_'+me.id,'enabled');
+ else localStorage.removeItem('chatx_auto_answer_'+me.id);
+ note($('adminAutoAnswer').checked?'Admin Auto-Answer ON · শুধু অ্যাপ সামনে খোলা থাকলে':'Admin Auto-Answer OFF');
+};
+// WebRTC audio/video. Camera and microphone start only on explicit call action or separate consented visible-screen admin auto-answer.
+
+// Previously granted device permissions NEVER authorize silently answering a future admin call.
 const iceServers=[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}];
-function openCallModal(title,sub,incoming=false){$('callHeading').textContent=title;$('callSub').textContent=sub;$('incomingActions').classList.toggle('hidden',!incoming);$('hangupCall').classList.toggle('hidden',incoming);show('callModal')}
-function makePeerConnection(){const pc=new RTCPeerConnection({iceServers});pc.onicecandidate=e=>{if(!e.candidate)return;const c=e.candidate.toJSON();if(activeCall?.id)post('/calls/'+activeCall.id+'/ice',{candidate:c}).catch(()=>{});else iceQueue.push(c)};pc.ontrack=e=>{$('remoteAudio').srcObject=e.streams[0]||new MediaStream([e.track]);$('remoteAudio').play().catch(()=>{})};pc.onconnectionstatechange=()=>{if(!activeCall)return;if(pc.connectionState==='connected')$('callSub').textContent='কলে সংযুক্ত ✓';if(['failed','closed'].includes(pc.connectionState)){$('callSub').textContent='সংযোগ বিচ্ছিন্ন';setTimeout(()=>endCall(),1200)}};return pc}
-async function getMic(){if(!navigator.mediaDevices?.getUserMedia)throw Error('এই ব্রাউজার/Android WebView-তে Microphone API পাওয়া যায়নি');return navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true},video:false})}
-async function flushIce(){if(!activeCall?.id)return;const queued=iceQueue.splice(0);for(const c of queued)await post('/calls/'+activeCall.id+'/ice',{candidate:c}).catch(()=>{})}
-async function beginCall(){if(!peer||activeCall)return;busy(true,'মাইক্রোফোন অনুমতি নেওয়া হচ্ছে…');let stream,pc;try{stream=await getMic();pc=makePeerConnection();stream.getTracks().forEach(t=>pc.addTrack(t,stream));activeCall={id:null,pc,stream,caller:true,answerSet:false};const offer=await pc.createOffer();await pc.setLocalDescription(offer);const d=await post('/calls/start',{userId:peer,offer:pc.localDescription.toJSON()});activeCall.id=d.id;await flushIce();lastIceId=0;openCallModal('☎ Calling…','অন্যজনের উত্তর অপেক্ষা',false);startCallPoll()}catch(e){if(stream)stream.getTracks().forEach(t=>t.stop());if(pc)pc.close();activeCall=null;err(e)}finally{busy(false)}}
-$('callBtn').onclick=beginCall;
-async function checkIncoming(){if(!me||activeCall||document.visibilityState!=='visible')return;const incoming=await request('/calls/incoming');if(!incoming.length)return;const c=incoming[0];activeCall={id:c.id,caller:false,pc:null,stream:null,peerName:c.username,answerSet:false};lastIceId=0;openCallModal('☎ '+c.username+' calling','অডিও কল গ্রহণ করবেন?',true)}
-async function receiveCall(){if(!activeCall||activeCall.caller)return;busy(true,'কল যুক্ত হচ্ছে…');let pc,stream;try{const info=await request('/calls/'+activeCall.id);if(info.status!=='ringing')throw Error('কলটি আর চালু নেই');stream=await getMic();pc=makePeerConnection();stream.getTracks().forEach(t=>pc.addTrack(t,stream));activeCall.pc=pc;activeCall.stream=stream;await pc.setRemoteDescription(info.offer);const answer=await pc.createAnswer();await pc.setLocalDescription(answer);await post('/calls/'+activeCall.id+'/answer',{answer:pc.localDescription.toJSON()});await flushIce();openCallModal('☎ Audio Call','Connecting…');startCallPoll()}catch(e){err(e);if(pc)pc.close();if(stream)stream.getTracks().forEach(t=>t.stop());await endCall()}finally{busy(false)}}
+const callRoute=a=>a.admin?'/video/admin/'+a.id:'/calls/'+a.id;
+function clearCallMedia(){for(const id of ['remoteAudio','remoteVideo','localVideo']){$(id).pause();$(id).srcObject=null;}hide('videoFrames');hide('callIndicator')}
+function openCallModal(title,sub,incoming=false){
+ $('callHeading').textContent=title;$('callSub').textContent=sub;
+ $('incomingActions').classList.toggle('hidden',!incoming);$('hangupCall').classList.toggle('hidden',incoming);
+ $('videoFrames').classList.toggle('hidden',activeCall?.kind!=='video'||incoming);
+ $('callIndicator').classList.toggle('hidden',!activeCall?.stream);
+ show('callModal');
+}
+function makePeerConnection(){const pc=new RTCPeerConnection({iceServers});
+ pc.onicecandidate=e=>{if(!e.candidate)return;const c=e.candidate.toJSON();if(activeCall?.id)post(callRoute(activeCall)+'/ice',{candidate:c}).catch(()=>{});else iceQueue.push(c)};
+ pc.ontrack=e=>{
+  const stream=e.streams[0]||new MediaStream([e.track]);
+  const target=activeCall?.kind==='video'?'remoteVideo':'remoteAudio';
+  $(target).srcObject=stream;$(target).play().catch(()=>{});
+ };
+ pc.onconnectionstatechange=()=>{if(!activeCall)return;
+  if(pc.connectionState==='connected')$('callSub').textContent='কল সংযুক্ত ✓';
+  if(['failed','closed'].includes(pc.connectionState)){$('callSub').textContent='সংযোগ বিচ্ছিন্ন';setTimeout(()=>endCall(),1200)}
+ };return pc;
+}
+async function captureCallMedia(kind){if(!navigator.mediaDevices?.getUserMedia)throw Error('Camera/Microphone API পাওয়া যায়নি');
+ return navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true},video:kind==='video'?{facingMode:'user',width:{ideal:640},height:{ideal:480}}:false});
+}
+function displayLocalMedia(a){if(a.kind!=='video'||!a.stream)return;$('localVideo').srcObject=a.stream;$('localVideo').play().catch(()=>{});show('callIndicator');}
+async function flushIce(){if(!activeCall?.id)return;const queued=iceQueue.splice(0);for(const c of queued)await post(callRoute(activeCall)+'/ice',{candidate:c}).catch(()=>{})}
+async function beginCall(kind='audio'){if(!peer||activeCall)return;
+ busy(true,kind==='video'?'Camera ও Microphone অনুমতি নেওয়া হচ্ছে…':'Microphone অনুমতি নেওয়া হচ্ছে…');let stream,pc;
+ try{
+  stream=await captureCallMedia(kind);pc=makePeerConnection();stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+  activeCall={id:null,pc,stream,kind,admin:false,caller:true,answerSet:false};
+  const offer=await pc.createOffer();await pc.setLocalDescription(offer);
+  const d=await post('/calls/start',{userId:peer,kind,offer:pc.localDescription.toJSON()});
+  activeCall.id=d.id;await flushIce();lastIceId=0;
+  openCallModal(kind==='video'?'📹 Video Calling…':'☎ Audio Calling…','অন্যজনের উত্তর অপেক্ষা',false);displayLocalMedia(activeCall);startCallPoll();
+ }catch(e){if(stream)stream.getTracks().forEach(t=>t.stop());if(pc)pc.close();activeCall=null;clearCallMedia();err(e)}finally{busy(false)}
+}
+$('callBtn').onclick=()=>beginCall('audio');$('videoCallBtn').onclick=()=>beginCall('video');
+async function checkIncoming(){if(!me||activeCall||!chatXDeviceForeground||document.visibilityState!=='visible')return;
+ // Admin video calls are only shown as incoming invitations, never silently accepted.
+ const adminIncoming=await request('/video/admin/incoming');
+ if(adminIncoming.length){const c=adminIncoming[0];activeCall={id:c.id,kind:'video',admin:true,caller:false,pc:null,stream:null,peerName:'ChatX Admin',answerSet:false};lastIceId=0;openCallModal('📹 ChatX Admin ভিডিও কল',adminAutoAnswerEnabled()?'Auto-answer চালু আছে · Camera/Mic indicator থাকবে':'এই কলটি গ্রহণ করবেন? ক্যামেরা ও মাইক্রোফোন শুধু Accept করার পরে চালু হবে।',true);if(adminAutoAnswerEnabled()){await receiveCall()}return}
+ const incoming=await request('/calls/incoming');if(!incoming.length)return;
+ const c=incoming[0];activeCall={id:c.id,kind:c.kind==='video'?'video':'audio',admin:false,caller:false,pc:null,stream:null,peerName:c.username,answerSet:false};lastIceId=0;
+ openCallModal((c.kind==='video'?'📹 ':'☎ ')+c.username+' calling',(c.kind==='video'?'Video':'Audio')+' কল গ্রহণ করবেন?',true);
+}
+async function receiveCall(){if(!activeCall||activeCall.caller)return;busy(true,'কল যুক্ত হচ্ছে…');let pc,stream;
+ try{
+  const a=activeCall;const info=await request(callRoute(a));if(info.status!=='ringing')throw Error('কলটি আর চালু নেই');
+  // Explicit Receive press is required on every incoming call.
+  stream=await captureCallMedia(a.kind);pc=makePeerConnection();stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+  a.pc=pc;a.stream=stream;await pc.setRemoteDescription(info.offer);
+  const answer=await pc.createAnswer();await pc.setLocalDescription(answer);
+  await post(callRoute(a)+'/answer',{answer:pc.localDescription.toJSON()});await flushIce();
+  openCallModal(a.kind==='video'?'📹 Video Call':'☎ Audio Call','Connecting…');displayLocalMedia(a);startCallPoll();
+ }catch(e){err(e);if(pc)pc.close();if(stream)stream.getTracks().forEach(t=>t.stop());await endCall()}finally{busy(false)}
+}
 $('acceptCall').onclick=receiveCall;$('declineCall').onclick=()=>endCall();$('hangupCall').onclick=()=>endCall();
 function startCallPoll(){clearInterval(callTimer);callTimer=setInterval(()=>pollCall().catch(err),2300);pollCall().catch(()=>{})}
-async function pollCall(){const a=activeCall;if(!a?.id)return;const info=await request('/calls/'+a.id);if(activeCall!==a)return;if(info.status==='ended'){note('কল শেষ হয়েছে');return endCall(false)}if(info.status==='ringing'&&Date.now()-new Date(info.created_at).getTime()>90000){note('কেউ কল ধরেননি');return endCall()}if(a.caller&&info.status==='accepted'&&info.answer&&!a.answerSet){await a.pc.setRemoteDescription(info.answer);a.answerSet=true;$('callSub').textContent='Connecting audio…'}if(a.pc?.remoteDescription){const ice=await request('/calls/'+a.id+'/ice?after='+lastIceId);for(const item of ice){if(activeCall!==a)break;lastIceId=Math.max(lastIceId,Number(item.id));try{await a.pc.addIceCandidate(item.candidate)}catch{/* Out-of-order ICE; next candidates may succeed */}}}}
-async function endCall(send=true){const a=activeCall;activeCall=null;clearInterval(callTimer);lastIceId=0;iceQueue=[];if(a?.stream)a.stream.getTracks().forEach(t=>t.stop());if(a?.pc)a.pc.close();$('remoteAudio').srcObject=null;hide('callModal');if(send&&a?.id&&token)try{await post('/calls/'+a.id+'/end',{})}catch{}}
+async function pollCall(){const a=activeCall;if(!a?.id)return;
+ const info=await request(callRoute(a));if(activeCall!==a)return;
+ if(info.status==='ended'){note('কল শেষ হয়েছে');return endCall(false)}
+ if(info.status==='ringing'&&Date.now()-new Date(info.created_at).getTime()>90000){note('কেউ কল ধরেননি');return endCall()}
+ if(a.caller&&info.status==='accepted'&&info.answer&&!a.answerSet){await a.pc.setRemoteDescription(info.answer);a.answerSet=true;$('callSub').textContent='Connecting…'}
+ if(a.pc?.remoteDescription){const ice=await request(callRoute(a)+'/ice?after='+lastIceId);
+  for(const item of ice){if(activeCall!==a)break;lastIceId=Math.max(lastIceId,Number(item.id));try{await a.pc.addIceCandidate(item.candidate)}catch{}}
+ }
+}
+async function endCall(send=true){const a=activeCall;activeCall=null;clearInterval(callTimer);lastIceId=0;iceQueue=[];
+ if(a?.stream)a.stream.getTracks().forEach(t=>t.stop());if(a?.pc)a.pc.close();clearCallMedia();hide('callModal');
+ if(send&&a?.id&&token)try{await post(callRoute(a)+'/end',{})}catch{}
+}
 // Private photo vault: AES-GCM encrypted blobs persisted to this device's IndexedDB only.
 function dbOpen(){if(vaultDB)return Promise.resolve(vaultDB);return new Promise((ok,no)=>{const r=indexedDB.open('chatx_private_vault_v1',1);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains('records'))db.createObjectStore('records',{keyPath:'id'})};r.onsuccess=()=>{vaultDB=r.result;ok(vaultDB)};r.onerror=()=>no(r.error)})}
 async function dbGet(id){const db=await dbOpen();return new Promise((ok,no)=>{const tx=db.transaction('records','readonly'),r=tx.objectStore('records').get(id);r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
@@ -137,12 +277,35 @@ async function showVaultImages(){if(!vaultKey)return;for(const u of vaultObjectU
 
 // Explicit Android WebView lifecycle: treat app backgrounding the same as hiding the page.
 window.addEventListener('chatx-background',()=>{
- if(!shareDesired||!token)return;
+ chatXDeviceForeground=false;
+ if(nativeLocationOn()||!shareDesired||!token)return;
  if(geoWatch!=null&&navigator.geolocation){navigator.geolocation.clearWatch(geoWatch);geoWatch=null}
  clearInterval(geoTimer);updateLocationBadge(false);
  fetch('/api/location/stop',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}',keepalive:true}).catch(()=>{});
 });
 window.addEventListener('chatx-foreground',()=>{
- if(!shareDesired||!token||!me)return;
+ chatXDeviceForeground=true;refreshNativeConnectUI();if(nativeLocationOn()||!shareDesired||!token||!me)return;
  geoOnce().then(p=>{lastPoint=p;return post('/location/start',{consent:true,location:p})}).then(()=>{watchLocation();updateLocationBadge(true)}).catch(()=>stopShare(false));
 });
+
+
+// Protected Moments: stories are limited to the owner and accepted friends, expire in 24 hours.
+let currentStory=null,storyBlobUrl=null,loadedStories=[];
+function applyPageStyle(page){const cfg=window.chatxPageSettings||{},accent=cfg['page_'+page+'_accent'],title=cfg['page_'+page+'_title'];if(accent&&/^#[0-9a-fA-F]{6}$/.test(accent))document.documentElement.style.setProperty('--accent',accent);else if(/^#[0-9a-fA-F]{6}$/.test(cfg.accent||''))document.documentElement.style.setProperty('--accent',cfg.accent);if(title){const headings={inbox:'.inbox-titlebar h2',registration:'#authTitle',profile:'#profile h2',stories:'.story-titlebar b',vault:'#vault h2',chat:'#conversation .day-marker span'};const el=document.querySelector(headings[page]);if(el)el.textContent=title;}}
+async function loadStories(){if(!token||!me)return;const rows=await request('/stories');loadedStories=rows;const list=$('storyStrip');if(!list)return;list.replaceChildren();const my=document.createElement('button');my.className='story-bubble';my.innerHTML='<span class="story-ring"><span>＋</span></span><small>Your Story</small>';my.onclick=()=>$('storyComposer').classList.remove('hidden');list.appendChild(my);for(const s of rows){const b=document.createElement('button');b.type='button';b.className='story-bubble'+(s.viewed?' viewed':'');const ring=document.createElement('span');ring.className='story-ring';const av=document.createElement('span');av.textContent=(s.username||'C').charAt(0).toUpperCase();ring.append(av);const label=document.createElement('small');label.textContent=s.owner_id===me.id?'My Story':s.username;b.append(ring,label);b.onclick=()=>openStory(s);list.appendChild(b);}}
+$('storyAddBtn').onclick=()=>$('storyComposer').classList.remove('hidden');$('storyComposeClose').onclick=()=>$('storyComposer').classList.add('hidden');$('storyViewerClose').onclick=closeStory;
+function closeStory(){if(storyBlobUrl)URL.revokeObjectURL(storyBlobUrl);storyBlobUrl=null;$('storyMediaPreview').replaceChildren();$('storyViewer').classList.add('hidden');currentStory=null;}
+function storyFileData(file){return new Promise((ok,no)=>{const rd=new FileReader();rd.onload=()=>ok(rd.result);rd.onerror=()=>no(Error('ফাইল পড়া যায়নি'));rd.readAsDataURL(file);});}
+$('storyPublish').onclick=async()=>{const file=$('storyMedia').files[0];if(!file)return note('একটি ছবি বা ভিডিও বেছে নিন');if(!['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/webm'].includes(file.type)||file.size>9*1024*1024)return note('এই ফরম্যাট/সাইজ সাপোর্ট করে না (৯ MB সীমা)');busy(true,'Story upload হচ্ছে…');$('storyPublish').disabled=true;try{const data=await storyFileData(file);await post('/stories',{media:data,caption:$('storyCaption').value});$('storyComposer').classList.add('hidden');$('storyMedia').value='';$('storyCaption').value='';await loadStories();note('✨ আপনার Story প্রকাশিত হয়েছে','success')}catch(e){err(e)}finally{busy(false);$('storyPublish').disabled=false}};
+async function openStory(s){if(!s)return;closeStory();currentStory=s;$('storyViewer').classList.remove('hidden');$('storyViewerName').textContent='✦ @'+s.username;$('storyViewerCaption').textContent=s.caption||'';$('storyViewerStats').textContent=(s.owner_id===me.id?'Views: '+s.view_count:'24-hour Story');$('storyDeleteBtn').classList.toggle('hidden',s.owner_id!==me.id);$('storyViewersBtn').classList.toggle('hidden',s.owner_id!==me.id);const box=$('storyMediaPreview');box.textContent='Loading story…';try{const r=await fetch('/api/stories/media/'+encodeURIComponent(s.id),{headers:{Authorization:'Bearer '+token}});if(!r.ok)throw Error('Story load failed');const blob=await r.blob();if(currentStory!==s)return;storyBlobUrl=URL.createObjectURL(blob);const media=document.createElement(s.mime.startsWith('video/')?'video':'img');media.src=storyBlobUrl;if(media.tagName==='VIDEO'){media.controls=true;media.autoplay=true;media.playsInline=true;}media.alt='ChatX Story';box.replaceChildren(media);await post('/stories/'+s.id+'/view',{});if(!s.viewed&&s.owner_id!==me.id){s.viewed=true;loadStories().catch(()=>{})}}catch(e){box.textContent=e.message;}}
+$('storyDeleteBtn').onclick=async()=>{const s=currentStory;if(!s||s.owner_id!==me.id||!confirm('এই Story স্থায়ীভাবে মুছবেন?'))return;try{await request('/stories/'+s.id,{method:'DELETE'});closeStory();await loadStories();note('Story মুছে দেওয়া হয়েছে')}catch(e){err(e)}};
+$('storyViewersBtn').onclick=async()=>{const s=currentStory;if(!s||s.owner_id!==me.id)return;try{const rows=await request('/stories/'+s.id+'/viewers');$('storyViewerStats').textContent=rows.length?'Seen by: '+rows.map(x=>'@'+x.username).join(', '):'এখনো কেউ দেখেনি'}catch(e){err(e)}};
+// Optional Android FCM Bridge: gracefully no-ops in web browsers / unconfigured APK builds.
+function configurePush(){if(token&&window.ChatXPush&&typeof window.ChatXPush.register==='function')window.ChatXPush.register(token);}
+window.addEventListener('chatx-foreground',()=>{if(me){configurePush();loadStories().catch(()=>{})}});
+
+// Notification permission is requested only from a user-tapped Profile button.
+$('enablePush').onclick=()=>{if(!window.ChatXPush){$('pushState').textContent='শুধু Android APK-তে Push পাওয়া যাবে';return;}if(!token)return note('আগে লগইন করুন');window.ChatXPush.enable(token);$('pushState').textContent='Android Notification Permission যাচাই করুন';};
+$('disablePush').onclick=()=>{if(window.ChatXPush)window.ChatXPush.disable();$('pushState').textContent='Push notifications disabled';};
+window.ChatXEnterFromNotification=()=>{if(!$('gate').classList.contains('hidden'))enter();setTimeout(()=>{if(me)checkIncoming().catch(()=>{});},1400)};
+window.ChatXOpenPeerFromNotification=(id)=>{if(!$('gate').classList.contains('hidden'))enter();let tries=0;const job=setInterval(async()=>{if(++tries>14){clearInterval(job);return;}if(!me)return;clearInterval(job);try{await loadChats();const u=inboxRows.find(x=>x.id===id);if(u)await openChat(u.id,u.username);else switchTab('chats')}catch(e){err(e)}},550)};

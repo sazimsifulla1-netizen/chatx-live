@@ -70,3 +70,49 @@
 
 /* Give the selected full-screen inbox maximum useful vertical space. */
 .shell.inbox-mode .banner{display:none}
+
+/* v4: Royal Neon conversation + Royal Neon Registration, Minimal Vault */
+.registration-royal{border-color:#9E4DEA;box-shadow:0 16px 54px #5f16a54a,inset 0 1px #ca8eff33;background:linear-gradient(165deg,#231237ee,#130a25fa)}
+.registration-royal .input-wrap{background:#140e29;border-radius:16px;border-color:#603981;transition:border-color .2s,box-shadow .2s}
+.registration-royal .input-wrap:focus-within{border-color:#b569f2;box-shadow:0 0 16px #922cbb55}
+.registration-royal .main-btn{background:linear-gradient(100deg,#742CFF,#F030D7);box-shadow:0 0 22px #af3eed85;border-radius:18px;font-size:15px}
+.registration-royal .registration-location{background:#241035;border-color:#8543ae}
+.registration-royal .auth-switch .active{background:linear-gradient(100deg,#762ff8,#ba3fee)}
+.royal-conversation{min-height:calc(100dvh - 195px);display:flex;flex-direction:column;background:radial-gradient(ellipse at 8% 34%,#45145a4f,transparent 52%),radial-gradient(ellipse at 95% 72%,#7a2ca452,transparent 65%);padding:8px 0 0}
+.royal-conversation .conversation-head{background:linear-gradient(100deg,#291441,#150d29);border:1px solid #60388c;border-radius:22px;padding:9px 11px;gap:10px;box-shadow:0 10px 35px #1a092c}
+.royal-conversation .conversation-head h3{font-size:15px;letter-spacing:.1px}
+.chat-head-avatar{width:43px;height:43px;border:2px solid #bf7cfc;box-shadow:0 0 13px #b54cf877}
+.chat-back,.chat-call{font-size:24px;background:transparent;color:#E1B3FF;min-width:37px;padding:6px}
+.chat-call{border:1px solid #6f409f;border-radius:50%;height:42px;width:42px}
+.day-marker{text-align:center;color:#BFA0D5;font-size:11px;margin:15px 0 0}
+.day-marker span{background:#221332;border:1px solid #422459;border-radius:99px;padding:5px 22px}
+.royal-conversation .messages{flex:1;height:auto;min-height:40dvh;max-height:calc(100dvh - 330px);background:transparent;scroll-behavior:smooth;margin:12px 0 4px;padding:10px 2px}
+.royal-conversation .bubble{max-width:85%;background:linear-gradient(135deg,#382253,#2d1b49);border:1px solid #6e4689;border-radius:19px 19px 19px 4px;box-shadow:0 9px 24px #09031070;margin:12px 6px;padding:12px 13px;color:#fff;font-size:14px}
+.royal-conversation .bubble.mine{border-radius:19px 19px 4px 19px;background:linear-gradient(128deg,#7115c8,#a325d8);border-color:#bb5ef4}
+.bubble-meta{display:block;text-align:right;font-size:10px;color:#E2C5FC;margin-top:7px}
+.chat-photo{width:min(100%,260px);max-height:340px;object-fit:cover;border-radius:13px;display:block;cursor:zoom-in;background:#2c2040;min-height:90px}
+.chat-compose{background:#211034;border:1px solid #8f42d0;box-shadow:0 0 28px #6a20a650;border-radius:99px;align-items:center;padding:5px 8px;gap:7px;margin:8px 0 4px}
+.chat-compose input{background:transparent;border:0;box-shadow:none!important;font-size:14px;padding:10px 2px;flex:1}
+.chat-compose button{min-width:42px;border-radius:50%;height:42px;padding:0;display:grid;place-items:center}
+.chat-compose .attachment-btn{background:#34204e;color:#dcb7ff;font-size:22px}
+.chat-compose .chat-send{background:linear-gradient(125deg,#a526f4,#7824d4);font-size:20px;box-shadow:0 0 13px #bc50ffb8}
+.photo-overlay{position:fixed;inset:0;background:#0d0719f5;z-index:130;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:20px}
+.photo-overlay img{max-width:100%;max-height:78dvh;object-fit:contain;border-radius:14px}
+.photo-overlay button{align-self:flex-end}
+.native-vault-btn{border:1px solid #be66ff;box-shadow:0 0 14px #8737ff55}
+
+/* Video call with prominent recording/streaming indicator */
+.video-frames{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:8px;margin:12px 0;min-height:200px}
+.video-frames video{width:100%;height:245px;object-fit:cover;background:#090617;border-radius:17px;border:1px solid #9253db}
+.video-frames video:nth-child(2){height:150px;align-self:end}
+.call-indicator{color:#ffccd4;background:#68263d;padding:9px;border-radius:10px;margin:8px 0;font-size:12px;font-weight:650;text-align:center}
+.call-indicator.hidden{display:none}
+
+/* v5 Royal Neon persistent-connect controls */
+#nativeConnectPanel{background:linear-gradient(160deg,#1b0c38,#2c1453 64%,#160925);border:1px solid #9252e6;box-shadow:0 10px 30px #05001566}
+#nativeConnectPanel .row{flex-wrap:wrap;gap:8px}
+#nativeConnectPanel .row button{flex:1 1 190px;font-size:13px}
+#nativeConnectState{color:#cdb9ff;font-weight:600;padding:9px 12px;border-radius:10px;background:#110b27}
+
+/* ChatX v6 Royal Neon Moments Story system */
+.story-titlebar{margin:16px 0 9px;display:flex;align-items:center;justify-content:space-between;gap:12px}.story-titlebar b{font-size:17px;color:#f3dcff}.story-titlebar small{display:block;color:#bba5d2;font-size:10px;letter-spacing:.4px;margin-top:3px}.story-create{border:1px solid #a35dee;border-radius:999px;background:linear-gradient(110deg,#542398,#aa3de3);padding:10px 14px;color:white;font-weight:800;box-shadow:0 4px 22px #b34efa4f;font-size:12px}.story-strip{display:flex;gap:12px;overflow-x:auto;padding:10px 3px 16px;scroll-snap-type:x proximity;min-height:102px}.story-bubble{flex:0 0 70px;width:70px;border:0;background:transparent;color:#f5e6ff;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px;scroll-snap-align:start}.story-ring{width:57px;height:57px;padding:3px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:linear-gradient(125deg,#ff77d5,#8038ff,#6dc8fe);box-shadow:0 0 15px #b74cf55c}.story-bubble.viewed .story-ring{background:linear-gradient(125deg,#665076,#2b2748)}.story-ring span{display:grid;place-items:center;overflow:hidden;background:#211139;width:100%;height:100%;border-radius:50%;font-size:23px;font-weight:700}.story-ring img{width:100%;height:100%;object-fit:cover;border-radius:50%}.story-bubble small{font-size:11px;max-width:75px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.story-backdrop{position:fixed;inset:0;z-index:900;background:#0c0415ed;display:grid;place-items:center;padding:14px;backdrop-filter:blur(12px)}.story-backdrop.hidden{display:none!important}.story-card{background:linear-gradient(155deg,#30144f,#130a26);width:min(100%,480px);max-height:95dvh;overflow:auto;border:1px solid #9e55f2;border-radius:26px;padding:18px;box-shadow:0 20px 80px #000a}.story-card input{margin:12px 0}.story-view-card{min-height:340px}.story-preview{display:grid;place-items:center;min-height:240px;max-height:62dvh;margin:16px 0;background:#0b0915;border-radius:19px;overflow:hidden}.story-preview img,.story-preview video{width:100%;height:auto;max-height:62dvh;object-fit:contain}.story-preview p{padding:12px}.story-card h3{font-size:20px}.story-card .fine{line-height:1.5}@media(max-width:420px){.story-card{padding:14px;border-radius:19px}.story-create{padding:9px}.story-strip{gap:8px}}

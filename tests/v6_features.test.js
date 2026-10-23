@@ -1,0 +1,8 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),path=require('path');
+const root=path.join(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
+test('stories protected by friend relationships and expiration',()=>{const s=read('server.js');assert.match(s,/app\.get\('\/api\/stories'/);assert.match(s,/story_views/);assert.match(s,/s\.expires_at>NOW\(\)/);assert.match(s,/f\.status='accepted'/);});
+test('story viewer uploader video support and deletion',()=>{const ui=read('public/index.html'),app=read('public/app.js');for(const id of ['storyAddBtn','storyMedia','storyPublish','storyViewer','storyDeleteBtn'])assert.match(ui,new RegExp('id="'+id+'"'));assert.match(app,/video\/mp4/);assert.match(app,/loadStories/)});
+test('FCM push endpoints consent and notification services exist',()=>{const server=read('server.js'),android=read('android/app/src/main/AndroidManifest.xml'),service=read('android/app/src/main/java/com/chatx/live/ChatXPushService.java');assert.match(server,/\/api\/push\/register/);assert.match(server,/FIREBASE_SERVICE_ACCOUNT_JSON/);assert.match(android,/MESSAGING_EVENT/);assert.match(service,/isEnabled\(this\)/);});
+test('admin customizer bounds page titles and accents',()=>{const server=read('server.js'),admin=read('public/admin.html');assert.match(server,/page_.*_accent/);assert.match(server,/allowedSettings/);assert.match(admin,/id="studioPage"/);assert.match(admin,/id="studioSave"/);});
+test('Android call push never auto-starts camera or microphone',()=>{const push=read('android/app/src/main/java/com/chatx/live/ChatXPushService.java');assert.doesNotMatch(push,/getUserMedia|CameraManager\.openCamera|AudioRecord/);assert.match(push,/PendingIntent\.getActivity/)});

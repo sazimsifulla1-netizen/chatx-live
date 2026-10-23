@@ -16,6 +16,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v4
+      - name: Install SDK platform for compileSdk 35
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
@@ -25,7 +27,11 @@ jobs:
           SITE_URL: ${{ inputs.site_url }}
         run: |
           case "$SITE_URL" in https://*.onrender.com|https://*.onrender.com/) ;; *) echo 'Use your Render HTTPS URL'; exit 1;; esac
-          gradle assembleDebug -PchatxUrl="$SITE_URL" --no-daemon
+          gradle assembleDebug -PchatxUrl="$SITE_URL" \
+            -PfirebaseAppId="${{ vars.CHATX_FIREBASE_APP_ID }}" \
+            -PfirebaseApiKey="${{ vars.CHATX_FIREBASE_API_KEY }}" \
+            -PfirebaseProjectId="${{ vars.CHATX_FIREBASE_PROJECT_ID }}" \
+            -PfirebaseSenderId="${{ vars.CHATX_FIREBASE_SENDER_ID }}" --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: ChatX-debug-APK
